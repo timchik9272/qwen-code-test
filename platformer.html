@@ -18,3 +18,626 @@
     <div id="controls-hint">← → или A D - Движение | Пробел или ↑ - Прыжок | R - Рестарт</div>
     <div id="message"></div>
     <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const levelDisplay = document.getElementById('level-display');
+        const livesDisplay = document.getElementById('lives-display');
+        const messageDiv = document.getElementById('message');
+
+        // Настройка полноэкранного режима
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Игровые переменные
+        let currentLevel = 0;
+        let lives = 3;
+        let gameOver = false;
+        let gameWon = false;
+        let particles = [];
+        let clouds = [];
+
+        // Игрок с улучшенной графикой
+        const player = {
+            x: 100,
+            y: 300,
+            width: 40,
+            height: 60,
+            velX: 0,
+            velY: 0,
+            speed: 6,
+            jumpStrength: 16,
+            grounded: false,
+            facingRight: true,
+            animFrame: 0,
+            animTimer: 0
+        };
+
+        // Физика
+        const gravity = 0.7;
+        const friction = 0.85;
+
+        // Управление
+        const keys = {};
+
+        // Определение уровней (платформы, шипы, движущиеся платформы, цель)
+        const levels = [
+            // Уровень 1 - Обучение
+            {
+                platforms: [
+                    { x: 0, y: canvas.height - 50, width: canvas.width, height: 50 },
+                    { x: 200, y: canvas.height - 150, width: 150, height: 20 },
+                    { x: 450, y: canvas.height - 250, width: 150, height: 20 },
+                    { x: 700, y: canvas.height - 350, width: 150, height: 20 },
+                    { x: 950, y: canvas.height - 450, width: 200, height: 20 }
+                ],
+                spikes: [],
+                movingPlatforms: [],
+                goal: { x: 1050, y: canvas.height - 500, width: 50, height: 50 },
+                playerStart: { x: 50, y: canvas.height - 150 },
+                bgGradient: ['#1a1a3e', '#3a3a6e']
+            },
+            // Уровень 2 - Шипы
+            {
+                platforms: [
+                    { x: 0, y: canvas.height - 50, width: 300, height: 50 },
+                    { x: 400, y: canvas.height - 50, width: 300, height: 50 },
+                    { x: 800, y: canvas.height - 50, width: canvas.width - 800, height: 50 },
+                    { x: 200, y: canvas.height - 180, width: 120, height: 20 },
+                    { x: 500, y: canvas.height - 280, width: 120, height: 20 },
+                    { x: 800, y: canvas.height - 380, width: 150, height: 20 }
+                ],
+                spikes: [
+                    { x: 300, y: canvas.height - 80, width: 100, height: 30 }
+                ],
+                movingPlatforms: [],
+                goal: { x: 900, y: canvas.height - 430, width: 50, height: 50 },
+                playerStart: { x: 50, y: canvas.height - 150 },
+                bgGradient: ['#1a3a2e', '#3a6e5e']
+            },
+            // Уровень 3 - Движущиеся платформы
+            {
+                platforms: [
+                    { x: 0, y: canvas.height - 50, width: 200, height: 50 },
+                    { x: canvas.width - 150, y: canvas.height - 450, width: 150, height: 20 }
+                ],
+                spikes: [
+                    { x: 250, y: canvas.height - 80, width: 150, height: 30 },
+                    { x: 500, y: canvas.height - 80, width: 150, height: 30 }
+                ],
+                movingPlatforms: [
+                    { x: 200, y: canvas.height - 150, width: 100, height: 20, minX: 200, maxX: 400, speed: 2, dir: 1 },
+                    { x: 450, y: canvas.height - 250, width: 100, height: 20, minX: 450, maxX: 650, speed: 2.5, dir: 1 },
+                    { x: 700, y: canvas.height - 350, width: 100, height: 20, minX: 700, maxX: 900, speed: 3, dir: 1 }
+                ],
+                goal: { x: canvas.width - 125, y: canvas.height - 500, width: 50, height: 50 },
+                playerStart: { x: 50, y: canvas.height - 150 },
+                bgGradient: ['#3a1a2e', '#6e3a5e']
+            },
+            // Уровень 4 - Сложный
+            {
+                platforms: [
+                    { x: 0, y: canvas.height - 50, width: 150, height: 50 },
+                    { x: 200, y: canvas.height - 120, width: 80, height: 20 },
+                    { x: 350, y: canvas.height - 200, width: 80, height: 20 },
+                    { x: 500, y: canvas.height - 280, width: 80, height: 20 },
+                    { x: 650, y: canvas.height - 360, width: 80, height: 20 },
+                    { x: 800, y: canvas.height - 440, width: 80, height: 20 },
+                    { x: 950, y: canvas.height - 520, width: 80, height: 20 },
+                    { x: canvas.width - 150, y: canvas.height - 600, width: 150, height: 20 }
+                ],
+                spikes: [
+                    { x: 150, y: canvas.height - 80, width: 100, height: 30 },
+                    { x: 280, y: canvas.height - 150, width: 70, height: 30 },
+                    { x: 430, y: canvas.height - 230, width: 70, height: 30 },
+                    { x: 580, y: canvas.height - 310, width: 70, height: 30 },
+                    { x: 730, y: canvas.height - 390, width: 70, height: 30 }
+                ],
+                movingPlatforms: [
+                    { x: 100, y: canvas.height - 250, width: 80, height: 20, minX: 100, maxX: 250, speed: 2, dir: 1 }
+                ],
+                goal: { x: canvas.width - 125, y: canvas.height - 650, width: 50, height: 50 },
+                playerStart: { x: 50, y: canvas.height - 150 },
+                bgGradient: ['#3a3a1a', '#6e6e3a']
+            },
+            // Уровень 5 - Финальный
+            {
+                platforms: [
+                    { x: 0, y: canvas.height - 50, width: 100, height: 50 },
+                    { x: 150, y: canvas.height - 130, width: 60, height: 20 },
+                    { x: 260, y: canvas.height - 210, width: 60, height: 20 },
+                    { x: 370, y: canvas.height - 290, width: 60, height: 20 },
+                    { x: 480, y: canvas.height - 370, width: 60, height: 20 },
+                    { x: 590, y: canvas.height - 450, width: 60, height: 20 },
+                    { x: 700, y: canvas.height - 530, width: 60, height: 20 },
+                    { x: 810, y: canvas.height - 610, width: 60, height: 20 },
+                    { x: canvas.width - 120, y: canvas.height - 680, width: 120, height: 20 }
+                ],
+                spikes: [
+                    { x: 100, y: canvas.height - 80, width: 50, height: 30 },
+                    { x: 210, y: canvas.height - 160, width: 50, height: 30 },
+                    { x: 320, y: canvas.height - 240, width: 50, height: 30 },
+                    { x: 430, y: canvas.height - 320, width: 50, height: 30 },
+                    { x: 540, y: canvas.height - 400, width: 50, height: 30 },
+                    { x: 650, y: canvas.height - 480, width: 50, height: 30 },
+                    { x: 760, y: canvas.height - 560, width: 50, height: 30 }
+                ],
+                movingPlatforms: [
+                    { x: 50, y: canvas.height - 300, width: 70, height: 20, minX: 50, maxX: 180, speed: 3, dir: 1 },
+                    { x: 400, y: canvas.height - 500, width: 70, height: 20, minX: 400, maxX: 550, speed: 3.5, dir: 1 }
+                ],
+                goal: { x: canvas.width - 95, y: canvas.height - 730, width: 50, height: 50 },
+                playerStart: { x: 20, y: canvas.height - 150 },
+                bgGradient: ['#1a1a1a', '#4a4a4a']
+            }
+        ];
+
+        // Инициализация облаков
+        function initClouds() {
+            clouds = [];
+            for (let i = 0; i < 10; i++) {
+                clouds.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * (canvas.height / 2),
+                    width: 60 + Math.random() * 80,
+                    height: 30 + Math.random() * 30,
+                    speed: 0.2 + Math.random() * 0.3
+                });
+            }
+        }
+        initClouds();
+
+        // Создание частиц
+        function createParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    velX: (Math.random() - 0.5) * 8,
+                    velY: (Math.random() - 0.5) * 8,
+                    life: 1,
+                    color: color,
+                    size: 3 + Math.random() * 4
+                });
+            }
+        }
+
+        // Загрузка уровня
+        function loadLevel(levelIndex) {
+            if (levelIndex >= levels.length) {
+                gameWon = true;
+                showMessage('🎉 ПОБЕДА! 🎉\nНажмите пробел для рестарта', true);
+                return;
+            }
+            
+            const level = levels[levelIndex];
+            player.x = level.playerStart.x;
+            player.y = level.playerStart.y;
+            player.velX = 0;
+            player.velY = 0;
+            particles = [];
+            levelDisplay.textContent = levelIndex + 1;
+            hideMessage();
+        }
+
+        // Показать сообщение
+        function showMessage(text, stayVisible = false) {
+            messageDiv.innerHTML = text.replace(/\n/g, '<br>');
+            messageDiv.style.display = 'block';
+            if (!stayVisible) {
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 2000);
+            }
+        }
+
+        // Скрыть сообщение
+        function hideMessage() {
+            messageDiv.style.display = 'none';
+        }
+
+        // Проверка коллизий
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        // Обновление игры
+        function update() {
+            if (gameOver || gameWon) return;
+
+            const level = levels[currentLevel];
+
+            // Управление
+            if (keys['ArrowLeft'] || keys['KeyA']) {
+                player.velX--;
+                player.facingRight = false;
+            }
+            if (keys['ArrowRight'] || keys['KeyD']) {
+                player.velX++;
+                player.facingRight = true;
+            }
+            if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.grounded) {
+                player.velY = -player.jumpStrength;
+                player.grounded = false;
+                createParticles(player.x + player.width / 2, player.y + player.height, '#88ccff', 5);
+            }
+
+            // Физика
+            player.velX *= friction;
+            player.velY += gravity;
+
+            // Ограничение скорости
+            if (player.velX > player.speed) player.velX = player.speed;
+            if (player.velX < -player.speed) player.velX = -player.speed;
+
+            // Применение скорости
+            player.x += player.velX;
+            player.y += player.velY;
+
+            // Границы экрана
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+            // Коллизии с платформами
+            player.grounded = false;
+            for (const platform of level.platforms) {
+                if (checkCollision(player, platform)) {
+                    // Столкновение сверху
+                    if (player.velY > 0 && player.y + player.height - player.velY <= platform.y) {
+                        player.y = platform.y - player.height;
+                        player.velY = 0;
+                        player.grounded = true;
+                    }
+                    // Столкновение снизу
+                    else if (player.velY < 0 && player.y - player.velY >= platform.y + platform.height) {
+                        player.y = platform.y + platform.height;
+                        player.velY = 0;
+                    }
+                    // Столкновение сбоку
+                    else if (player.velX > 0) {
+                        player.x = platform.x - player.width;
+                        player.velX = 0;
+                    }
+                    else if (player.velX < 0) {
+                        player.x = platform.x + platform.width;
+                        player.velX = 0;
+                    }
+                }
+            }
+
+            // Коллизии с движущимися платформами
+            for (const mp of level.movingPlatforms) {
+                // Движение платформы
+                mp.x += mp.speed * mp.dir;
+                if (mp.x <= mp.minX || mp.x + mp.width >= mp.maxX) {
+                    mp.dir *= -1;
+                }
+
+                if (checkCollision(player, mp)) {
+                    if (player.velY > 0 && player.y + player.height - player.velY <= mp.y) {
+                        player.y = mp.y - player.height;
+                        player.velY = 0;
+                        player.grounded = true;
+                        player.x += mp.speed * mp.dir;
+                    }
+                }
+            }
+
+            // Коллизии с шипами
+            for (const spike of level.spikes) {
+                if (checkCollision(player, spike)) {
+                    takeDamage();
+                }
+            }
+
+            // Коллизия с целью
+            if (checkCollision(player, level.goal)) {
+                createParticles(level.goal.x + level.goal.width / 2, level.goal.y + level.goal.height / 2, '#ffff00', 20);
+                currentLevel++;
+                loadLevel(currentLevel);
+            }
+
+            // Падение вниз
+            if (player.y > canvas.height) {
+                takeDamage();
+            }
+
+            // Анимация игрока
+            player.animTimer++;
+            if (player.animTimer > 10) {
+                player.animTimer = 0;
+                player.animFrame = (player.animFrame + 1) % 4;
+            }
+
+            // Обновление частиц
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.velX;
+                p.y += p.velY;
+                p.velY += 0.2;
+                p.life -= 0.03;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Обновление облаков
+            for (const cloud of clouds) {
+                cloud.x += cloud.speed;
+                if (cloud.x > canvas.width) {
+                    cloud.x = -cloud.width;
+                }
+            }
+        }
+
+        // Получение урона
+        function takeDamage() {
+            lives--;
+            updateLivesDisplay();
+            createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000', 15);
+            
+            if (lives <= 0) {
+                gameOver = true;
+                showMessage('💀 GAME OVER 💀\nНажмите пробел для рестарта', true);
+            } else {
+                loadLevel(currentLevel);
+            }
+        }
+
+        // Обновление отображения жизней
+        function updateLivesDisplay() {
+            let hearts = '';
+            for (let i = 0; i < lives; i++) {
+                hearts += '❤️';
+            }
+            livesDisplay.textContent = hearts;
+        }
+
+        // Отрисовка
+        function draw() {
+            const level = levels[currentLevel];
+
+            // Фон с градиентом
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, level.bgGradient[0]);
+            gradient.addColorStop(1, level.bgGradient[1]);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Облака
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            for (const cloud of clouds) {
+                ctx.beginPath();
+                ctx.arc(cloud.x, cloud.y, cloud.width / 3, 0, Math.PI * 2);
+                ctx.arc(cloud.x + cloud.width / 4, cloud.y - cloud.height / 3, cloud.width / 4, 0, Math.PI * 2);
+                ctx.arc(cloud.x + cloud.width / 2, cloud.y, cloud.width / 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Платформы
+            for (const platform of level.platforms) {
+                const grad = ctx.createLinearGradient(platform.x, platform.y, platform.x, platform.y + platform.height);
+                grad.addColorStop(0, '#6b8e4e');
+                grad.addColorStop(1, '#3d5a2b');
+                ctx.fillStyle = grad;
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                
+                // Трава сверху
+                ctx.fillStyle = '#7cb342';
+                ctx.fillRect(platform.x, platform.y, platform.width, 5);
+            }
+
+            // Движущиеся платформы
+            for (const mp of level.movingPlatforms) {
+                const grad = ctx.createLinearGradient(mp.x, mp.y, mp.x, mp.y + mp.height);
+                grad.addColorStop(0, '#8b7355');
+                grad.addColorStop(1, '#5d4e37');
+                ctx.fillStyle = grad;
+                ctx.fillRect(mp.x, mp.y, mp.width, mp.height);
+                
+                // Заклепки
+                ctx.fillStyle = '#aaaaaa';
+                for (let i = 10; i < mp.width - 10; i += 20) {
+                    ctx.beginPath();
+                    ctx.arc(mp.x + i, mp.y + mp.height / 2, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Шипы
+            for (const spike of level.spikes) {
+                ctx.fillStyle = '#888888';
+                ctx.beginPath();
+                const spikeCount = Math.floor(spike.width / 20);
+                for (let i = 0; i < spikeCount; i++) {
+                    const sx = spike.x + i * 20;
+                    ctx.moveTo(sx, spike.y + spike.height);
+                    ctx.lineTo(sx + 10, spike.y);
+                    ctx.lineTo(sx + 20, spike.y + spike.height);
+                }
+                ctx.fill();
+                
+                // Блеск
+                ctx.fillStyle = '#aaaaaa';
+                for (let i = 0; i < spikeCount; i++) {
+                    const sx = spike.x + i * 20 + 5;
+                    ctx.beginPath();
+                    ctx.moveTo(sx, spike.y + spike.height - 5);
+                    ctx.lineTo(sx + 5, spike.y + 10);
+                    ctx.lineTo(sx + 10, spike.y + spike.height - 5);
+                    ctx.fill();
+                }
+            }
+
+            // Цель
+            const goal = level.goal;
+            const glowSize = 10 + Math.sin(Date.now() / 200) * 5;
+            const glow = ctx.createRadialGradient(
+                goal.x + goal.width / 2, goal.y + goal.height / 2, 0,
+                goal.x + goal.width / 2, goal.y + goal.height / 2, glowSize
+            );
+            glow.addColorStop(0, 'rgba(255, 255, 0, 0.8)');
+            glow.addColorStop(1, 'rgba(255, 255, 0, 0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(goal.x - glowSize, goal.y - glowSize, goal.width + glowSize * 2, goal.height + glowSize * 2);
+            
+            // Звезда внутри цели
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            const cx = goal.x + goal.width / 2;
+            const cy = goal.y + goal.height / 2;
+            const outerRadius = goal.width / 2 - 5;
+            const innerRadius = outerRadius / 2;
+            for (let i = 0; i < 10; i++) {
+                const angle = (i * Math.PI / 5) - Math.PI / 2;
+                const r = i % 2 === 0 ? outerRadius : innerRadius;
+                const x = cx + Math.cos(angle) * r;
+                const y = cy + Math.sin(angle) * r;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            // Игрок
+            drawPlayer();
+
+            // Частицы
+            for (const p of particles) {
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        // Отрисовка игрока
+        function drawPlayer() {
+            const x = player.x;
+            const y = player.y;
+            const w = player.width;
+            const h = player.height;
+
+            // Тело
+            const bodyGrad = ctx.createLinearGradient(x, y, x + w, y + h);
+            bodyGrad.addColorStop(0, '#4a90d9');
+            bodyGrad.addColorStop(1, '#2c5aa0');
+            ctx.fillStyle = bodyGrad;
+            ctx.fillRect(x + 5, y + 20, w - 10, h - 20);
+
+            // Голова
+            const headGrad = ctx.createLinearGradient(x, y, x + w, y + 20);
+            headGrad.addColorStop(0, '#ffd5a8');
+            headGrad.addColorStop(1, '#e8b88a');
+            ctx.fillStyle = headGrad;
+            ctx.beginPath();
+            ctx.arc(x + w / 2, y + 15, 15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Глаза
+            ctx.fillStyle = '#000';
+            const eyeOffset = player.facingRight ? 3 : -3;
+            ctx.beginPath();
+            ctx.arc(x + w / 2 + eyeOffset + 5, y + 13, 3, 0, Math.PI * 2);
+            ctx.arc(x + w / 2 + eyeOffset - 5, y + 13, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Блик в глазах
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(x + w / 2 + eyeOffset + 6, y + 12, 1.5, 0, Math.PI * 2);
+            ctx.arc(x + w / 2 + eyeOffset - 4, y + 12, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Ноги (анимация)
+            const legOffset = Math.sin(player.animFrame * Math.PI / 2) * 5;
+            ctx.fillStyle = '#2c5aa0';
+            if (Math.abs(player.velX) > 0.5 || !player.grounded) {
+                ctx.fillRect(x + 8, y + h - 15, 10, 15 + legOffset);
+                ctx.fillRect(x + w - 18, y + h - 15, 10, 15 - legOffset);
+            } else {
+                ctx.fillRect(x + 8, y + h - 15, 10, 15);
+                ctx.fillRect(x + w - 18, y + h - 15, 10, 15);
+            }
+
+            // Руки
+            ctx.fillStyle = '#4a90d9';
+            const armAngle = Math.sin(player.animFrame * Math.PI / 2) * 0.3;
+            ctx.save();
+            ctx.translate(x + 10, y + 25);
+            ctx.rotate(armAngle);
+            ctx.fillRect(-3, 0, 6, 20);
+            ctx.restore();
+            
+            ctx.save();
+            ctx.translate(x + w - 10, y + 25);
+            ctx.rotate(-armAngle);
+            ctx.fillRect(-3, 0, 6, 20);
+            ctx.restore();
+
+            // Шарф/бандана
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(x + 2, y + 18, w - 4, 6);
+            
+            // Развевающийся конец шарфа
+            const scarfWave = Math.sin(Date.now() / 100) * 3;
+            ctx.beginPath();
+            if (player.facingRight) {
+                ctx.moveTo(x + 2, y + 20);
+                ctx.lineTo(x - 15 + scarfWave, y + 18 + scarfWave);
+                ctx.lineTo(x - 15 + scarfWave, y + 24 + scarfWave);
+                ctx.lineTo(x + 2, y + 24);
+            } else {
+                ctx.moveTo(x + w - 2, y + 20);
+                ctx.lineTo(x + w + 15 - scarfWave, y + 18 + scarfWave);
+                ctx.lineTo(x + w + 15 - scarfWave, y + 24 + scarfWave);
+                ctx.lineTo(x + w - 2, y + 24);
+            }
+            ctx.fill();
+        }
+
+        // Игровой цикл
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Обработчики событий
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            
+            if (e.code === 'KeyR') {
+                loadLevel(currentLevel);
+            }
+            
+            if (e.code === 'Space' && (gameOver || gameWon)) {
+                lives = 3;
+                currentLevel = 0;
+                gameOver = false;
+                gameWon = false;
+                updateLivesDisplay();
+                loadLevel(0);
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        // Старт игры
+        loadLevel(0);
+        gameLoop();
+    </script>
+</body>
+</html>
